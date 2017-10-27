@@ -1,0 +1,6 @@
+Spurs,Chelsea,20092017,Sun Aug 20 15:00:00 +0000 2017,1-2
+Chelsea,Everton,27082017,Sun Aug 27 12:30:00 +0000 2017,2-0
+Chelsea,Arsenal,17092017,Sun Sep 17 12:30:00 +0000 2017,0-0
+ManCity,Everton,21082017,Mon Aug 21 19:00:00 +0000 2017,1-1
+Bournemouth,26082017,ManCity,Sat Aug 26 11:30:00 +0000 2017,1-2
+Watford,ManCity,16092017,Sat Sep 16 14:00:00 +0000 2017,0-6

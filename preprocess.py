@@ -3,14 +3,9 @@
 spark application for preprocessing
 
 """
-
-
-import re
+import pickle
 import string
 from nltk.corpus import stopwords
-from nltk.sentiment import SentimentIntensityAnalyzer
-from nltk.stem import PorterStemmer
-from nltk.tokenize import TweetTokenizer
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf
 from pyspark.sql.types import *
@@ -45,16 +40,11 @@ for word in neg_words:
 # def sort_ordered_dict(order_dict):
 #     return OrderedDict(sorted(order_dict.items(), key=lambda x: x[1], reverse=True)).keys()[0]
 
-# def sentiment(text):
-#     score = (sid.polarity_scores(text))
-#     compund = score.get('compound')
-#     if compund >= 0.5:
-#         return 'pos'
-#     if compund <= -0.5:
-#         return 'neg'
-#     else:
-#         return 'neu'
-
+def sentiment(text):
+    with open('logistic.pkl', 'rb') as model:
+        lr_clf = pickle.load(model)
+        tag = lr_clf.predict(text)
+        return tag
 
 def has_column(df, col):
     try:

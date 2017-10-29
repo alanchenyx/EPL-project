@@ -1,6 +1,9 @@
 """
 
-main prediction
+main prediction file
+
+read input from collections of matches in mongoDB
+produce out as excel file and also save result to result database
 
 """
 
@@ -15,7 +18,13 @@ import config
 
 client = MongoClient(config.connection)
 matchdbs = client.match.collection_names()
+resultdb = client.result
 
+half_time = 45
+break_time = 15
+stoppage_time = 2
+game_length = half_time*2 + break_time + stoppage_time*2
+peak_distance = 5
 
 def main():
     for db in matchdbs:
@@ -26,20 +35,23 @@ def main():
         teamB = dbName.name.split('_')[1].lower()
 
         coll = client.match.get_collection(db)
-        predict_goal(teamA, coll, db)
-        predict_goal(teamB, coll, db)
+        predict(teamA, coll, db)
+        predict(teamB, coll, db)
 
 
-def predict_goal(team, collection, outputName):
+def predict(team, collection, outputName):
     teamName = team
     coll = collection
     team_keywords = [teamName]
     team_players = []
     timeCounter = 0
+
+    #time interval in seconds
     timInterval = 60
     team_tweets = []
     team_pos_sentiment = []
     team_neg_sentiment = []
+    result = {}
 
     with open('.\\doc\\' + teamName + '.csv', 'r') as f:
 
@@ -60,7 +72,7 @@ def predict_goal(team, collection, outputName):
         startTime = doc['created_at']
         break
 
-    while timeCounter < 120:
+    while timeCounter < game_length:
         # print(timeCounter)
         dt = datetime.datetime.strptime(startTime, '%a %b %d %H:%M:%S +0000 %Y')
         dfshift = dt + datetime.timedelta(0, timInterval)
@@ -75,9 +87,9 @@ def predict_goal(team, collection, outputName):
             for keyword in team_keywords:
                 if keyword in tweet['text']:
                     team_tweets_interval.append(tweet['text'])
-                    if tweet['tag'] == 'pos':
+                    if tweet['vader_tag'] == 'pos':
                         posCount += 1
-                    if tweet['tag'] == 'neg':
+                    if tweet['vader_tag'] == 'neg':
                         negCount += 1
 
         try:
@@ -101,42 +113,46 @@ def predict_goal(team, collection, outputName):
 
     i = 0
     timeline = []
-    volumn = []
+    volume = []
     result = open(str(outputName) + '_' + teamName + 'stats' + '.csv', 'w')
-    while i < 120:
-        # minute tweet_number %pos %neg
-        result.write(str(i) + ',' + str(len(team_tweets[i])) + ',' + (str(team_pos_sentiment[i])) + ',' + str(
-            team_neg_sentiment[i]) + ',' + '\n')
-        timeline.append(i)
-        volumn.append(len(team_tweets[i]))
-        i += 1
+    # while i < 120:
+    #     # minute tweet_number %pos %neg
+    #     result.write(str(i) + ',' + str(len(team_tweets[i])) + ',' + (str(team_pos_sentiment[i])) + ',' + str(
+    #         team_neg_sentiment[i]) + ',' + '\n')
+    #     timeline.append(i)
+    #     volume.append(len(team_tweets[i]))
+    #     i += 1
 
-    print(timeline)
-    print(volumn)
-    print(team_pos_sentiment)
+    # print(timeline)
+    # print(volume)
+    # print(team_pos_sentiment)
     # print('---------------------------------------------------------------')
 
     peak_time_goal = []
+    peak_time_foul = []
     pos_q3 = numpy.percentile(team_pos_sentiment, 75)
-    volumn_q3 = numpy.percentile(volumn, 75)
-
+    volume_q3 = numpy.percentile(volume, 75)
+    neg_q3 = numpy.percentile(team_neg_sentiment, 75)
     for i in range(len(team_pos_sentiment)):
-        if team_pos_sentiment[i] > pos_q3 and team_pos_sentiment[i] > team_pos_sentiment[i - 1] and volumn[
-            i] > volumn_q3 and ((i >= 5 and i <= 45) or (i > 60 and i < 110)):
+        if team_pos_sentiment[i] > pos_q3 and team_pos_sentiment[i] > team_pos_sentiment[i - 1] and volume[
+            i] > volume_q3 and ((i >= peak_distance and i <= half_time) or (i > (half_time + break_time) and i < game_length)):
             try:
-                if (i - peak_time_goal[-1]) >= 5:
+                if (i - peak_time_goal[-1]) >= peak_distance:
                     peak_time_goal.append(i)
             except IndexError:
                 peak_time_goal.append(i)
 
-    print('peaks detected: ' + str(peak_time_goal))
+        if team_neg_sentiment[i] > neg_q3 and team_neg_sentiment[i] > team_neg_sentiment[i - 1] and volume[
+            i] > volume_q3 and ((i >= peak_distance and i <= half_time) or (i > (half_time + break_time) and i < game_length)):
+            try:
+                if (i - peak_time_foul[-1]) >= peak_distance:
+                    peak_time_foul.append(i)
+            except IndexError:
+                peak_time_foul.append(i)
 
     if len(peak_time_goal) > 0:
         for goal in peak_time_goal:
             # look for the player mentioned most frequently for each goal
-            if goal > 60:
-                # if happens at second-half , minus break time
-                goal = goal - 15
             goal_tweets = team_tweets[goal]
             player_count = []
             for tweet in goal_tweets:
@@ -146,15 +162,51 @@ def predict_goal(team, collection, outputName):
 
             fdist = nltk.FreqDist(player_count)
 
+            if goal > (half_time + break_time):
+                # if happens at second-half , minus break time
+                goal = goal - break_time
             try:
                 predict_player = fdist.max()
+                prediction = str(outputName) + '_' + teamName + ' ,' + predict_player + ' at ' + str(goal)
+                result['goal'] = prediction
                 print(str(outputName) + '_' + teamName + ' ,' + predict_player + ' goal at ' + str(goal) + '\'')
                 print()
             except ValueError:
                 # print(str(outputName)+'_'+teamName + ' ,no goals!')
                 pass
 
-    print('---------------------------------------------------------------')
+    #print('-------------------------------------------------------')
+
+    if len(peak_time_foul) > 0:
+        for foul in peak_time_foul:
+            # look for the player mentioned most frequently for each goal
+            foul_tweets = team_tweets[foul]
+            player_count = []
+            for tweet in foul_tweets:
+                for player in team_players:
+                    if player in tweet:
+                        player_count.append(player)
+
+            fdist = nltk.FreqDist(player_count)
+
+            if foul > (half_time + break_time):
+                # if happens at second-half , minus break time
+                foul = foul - break_time
+            try:
+                predict_player = fdist.max()
+                prediction = str(outputName) + '_' + teamName + ' ,' + predict_player + ' at ' + str(foul)
+                result['foul'] = prediction
+                print(str(outputName) + '_' + teamName + ' ,' + predict_player + ' foul at ' + str(foul) + '\'')
+                print()
+            except ValueError:
+                # print(str(outputName)+'_'+teamName + ' ,no goals!')
+                pass
+
+    #save to mongoDB
+    resultdb.save(result)
+
+
+    #print('---------------------------------------------------------------')
 
 
 # tweets = list(sourcedb.find({'created_at': {'$gte':startTime, '$lt':endTime}}))

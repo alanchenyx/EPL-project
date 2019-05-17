@@ -1,5 +1,6 @@
 """
 
+This file is for reducing the exsiting database
 Use mongoDB mapreduce to exclude all fields except ['text', '_id', 'created_at', 'lang']
 
 """
